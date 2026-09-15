@@ -1,0 +1,112 @@
+<!DOCTYPE html>
+<html>
+  <head>
+    <meta charset="utf-8" />
+    <title>greytHR Time Remaining — Settings</title>
+    <style>
+      :root {
+        --ink: #0f172a; --muted: #64748b; --line: #e2e8f0;
+        --blue: #3b82f6; --indigo: #6366f1; --green: #22c55e;
+        --bg: #ffffff; --card: #f7f9fc;
+      }
+      @media (prefers-color-scheme: dark) {
+        :root {
+          --ink: #f1f5f9; --muted: #94a3b8; --line: #1e293b;
+          --bg: #0d1420; --card: #16202e;
+        }
+      }
+      body {
+        font-family: -apple-system, "Segoe UI", Roboto, sans-serif;
+        max-width: 440px;
+        margin: 0 auto;
+        padding: 48px 24px;
+        color: var(--ink);
+        background: var(--bg);
+        -webkit-font-smoothing: antialiased;
+      }
+      .brand {
+        display: flex; align-items: center; gap: 8px;
+        font-size: 13px; font-weight: 700; color: var(--muted);
+        margin-bottom: 6px;
+      }
+      .dotmark {
+        width: 10px; height: 10px; border-radius: 50%;
+        background: linear-gradient(135deg, var(--blue), var(--indigo));
+      }
+      h1 { font-size: 21px; margin: 0 0 28px; letter-spacing: -0.4px; }
+      label { display: block; margin: 22px 0 6px; font-size: 13px; font-weight: 600; }
+      .hint { font-size: 12px; color: var(--muted); margin-top: 5px; line-height: 1.5; }
+      code {
+        background: var(--card); padding: 1px 5px; border-radius: 4px; font-size: 12px;
+      }
+      input {
+        width: 100%;
+        padding: 10px 12px;
+        border: 1px solid var(--line);
+        border-radius: 9px;
+        font-size: 14px;
+        background: var(--bg);
+        color: var(--ink);
+        transition: border-color 0.15s, box-shadow 0.15s;
+      }
+      input:focus {
+        outline: none;
+        border-color: var(--blue);
+        box-shadow: 0 0 0 3px rgba(59, 130, 246, 0.15);
+      }
+      .req { display: flex; align-items: center; gap: 8px; }
+      .req input { width: 74px; text-align: center; }
+      .req span { color: var(--muted); font-size: 14px; }
+      button {
+        margin-top: 28px;
+        padding: 11px 22px;
+        border: none;
+        border-radius: 9px;
+        background: linear-gradient(135deg, var(--blue), var(--indigo));
+        color: #fff;
+        font-size: 14px;
+        font-weight: 600;
+        cursor: pointer;
+        box-shadow: 0 4px 12px rgba(59, 130, 246, 0.28);
+        transition: transform 0.12s, box-shadow 0.15s;
+      }
+      button:hover { transform: translateY(-1px); box-shadow: 0 6px 16px rgba(59, 130, 246, 0.38); }
+      button:active { transform: translateY(0); }
+      #saved { margin-left: 12px; color: var(--green); font-size: 13px; font-weight: 600; }
+    </style>
+  </head>
+  <body>
+    <div class="brand"><span class="dotmark"></span><span>greytHR</span></div>
+    <h1>Time Remaining — Settings</h1>
+
+    <label>Required working hours per day</label>
+    <div class="req">
+      <input type="number" id="hours" min="0" max="24" /> <span>h</span>
+      <input type="number" id="minutes" min="0" max="59" /> <span>m</span>
+    </div>
+    <div class="hint">Net worked time target (breaks excluded). Default 8h 30m.</div>
+
+    <label>Earliest leave time</label>
+    <input type="time" id="leaveTime" />
+    <div class="hint">You can't leave before this, even if your hours are done. Default 7:00 PM. Break time = the slack between your arrival + required hours and this time.</div>
+
+    <label>Heads-up before leave (minutes)</label>
+    <input type="number" id="headsUp" min="0" max="120" />
+    <div class="hint">Get a "almost there" notification this many minutes before you can leave. Set 0 to turn it off. Default 10.</div>
+
+    <label>greytHR subdomain</label>
+    <input type="text" id="subdomain" placeholder="mavenvista" />
+    <div class="hint">The part before <code>.greythr.com</code>. Auto-detected when you visit the portal.</div>
+
+    <label>Employee ID</label>
+    <input type="text" id="empId" placeholder="auto-detected" />
+    <div class="hint">Detected automatically from the portal. Override only if needed.</div>
+
+    <div>
+      <button id="save">Save</button>
+      <span id="saved"></span>
+    </div>
+
+    <script src="options.js"></script>
+  </body>
+</html>

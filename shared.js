@@ -1,0 +1,332 @@
+// Shared logic used by both the popup and the background service worker.
+
+export const DEFAULT_REQUIRED_MINUTES = 510; // 8h30m — change in Options to match your policy.
+export const DEFAULT_LEAVE_MINUTES = 19 * 60; // 7:00 PM — earliest you can leave.
+export const DEFAULT_HEADSUP_MINUTES = 10; // "N min till you can leave" heads-up.
+
+// greytHR sends punchDateTime as ISO *without* a timezone, but the value is UTC.
+// Parsing it as UTC keeps a live "still clocked in" segment correct against local `now`.
+export function parseUtc(s) {
+  return new Date(s.endsWith("Z") ? s : s + "Z");
+}
+
+// Local YYYY-MM-DD for the swipes query (matches what the portal sends).
+export function todayStr(now = new Date()) {
+  const p = (n) => String(n).padStart(2, "0");
+  return `${now.getFullYear()}-${p(now.getMonth() + 1)}-${p(now.getDate())}`;
+}
+
+export function monthStartStr(d) {
+  const p = (n) => String(n).padStart(2, "0");
+  return `${d.getFullYear()}-${p(d.getMonth() + 1)}-01`;
+}
+
+// Shared GET against the greytHR API using the user's session cookies.
+async function apiGet(url) {
+  const res = await fetch(url, {
+    method: "GET",
+    credentials: "include",
+    headers: {
+      accept: "application/json",
+      "x-requested-with": "XMLHttpRequest",
+      "csrf-token": "",
+      "api-scope": "web",
+    },
+  });
+  if (res.status === 401 || res.status === 403) {
+    const e = new Error("Not signed in to greytHR");
+    e.code = 401;
+    throw e;
+  }
+  if (!res.ok) {
+    const e = new Error("greytHR returned HTTP " + res.status);
+    e.code = res.status;
+    throw e;
+  }
+  return res.json();
+}
+
+export function buildSwipesUrl(subdomain, empId, date = todayStr()) {
+  return `https://${subdomain}.greythr.com/latte/v3/attendance/info/${empId}` +
+    `/swipes?startDate=${date}&endDate=&systemSwipes=true&swipePairs=true`;
+}
+
+// Today's (or a given day's) swipes.
+export function fetchSwipes(subdomain, empId, date = todayStr()) {
+  return apiGet(buildSwipesUrl(subdomain, empId, date));
+}
+
+// Monthly aggregate stats (avg in/out, late-ins, present/absent counts, ...).
+export function fetchInsights(subdomain, empId, monthStart) {
+  return apiGet(
+    `https://${subdomain}.greythr.com/latte/v3/attendance/info/${empId}` +
+      `/insights?startDate=${monthStart}&endDate=&shiftType=regular_shift&session=`
+  );
+}
+
+// Month calendar grid (per-day status). month is 1-based.
+export function fetchCalendar(subdomain, empId, year, month) {
+  return apiGet(
+    `https://${subdomain}.greythr.com/latte/v3/attendance/info/calendar/${month}/${year}/${empId}`
+  );
+}
+
+// Turns a swipes response into worked/remaining figures.
+// requiredSec is the daily target (net worked seconds, breaks excluded).
+// opts.now    — reference time for live "clocked in" counting (default now)
+// opts.countLive — add live time for a dangling IN (default true; pass false for past dates)
+export function computeAttendance(data, requiredSec, opts = {}) {
+  const now = opts.now || new Date();
+  const countLive = opts.countLive !== false;
+
+  const pairs = Array.isArray(data.swipePairs) ? data.swipePairs : [];
+  let workedSec = 0;
+  const segments = [];
+  for (const p of pairs) {
+    let sec;
+    if (typeof p.actualHours === "number") {
+      sec = p.actualHours; // already seconds
+    } else {
+      sec = Math.max(0, (parseUtc(p.outSwipe) - parseUtc(p.inSwipe)) / 1000);
+    }
+    workedSec += sec;
+    segments.push({
+      in: parseUtc(p.inSwipe),
+      out: parseUtc(p.outSwipe),
+      sec,
+      open: false,
+    });
+  }
+
+  const swipes = (Array.isArray(data.swipe) ? data.swipe : [])
+    .slice()
+    .sort((a, b) => parseUtc(a.punchDateTime) - parseUtc(b.punchDateTime));
+  const last = swipes[swipes.length - 1];
+
+  // Last swipe is an IN with no matching OUT => still clocked in.
+  let clockedIn = false;
+  let openInTime = null;
+  if (last && last.inOutIndicator === 1) {
+    clockedIn = true;
+    openInTime = parseUtc(last.punchDateTime);
+    if (countLive) {
+      const liveSec = Math.max(0, (now - openInTime) / 1000);
+      workedSec += liveSec;
+      segments.push({ in: openInTime, out: null, sec: liveSec, open: true });
+    } else {
+      segments.push({ in: openInTime, out: null, sec: 0, open: true });
+    }
+  }
+
+  const remainingSec = Math.max(0, requiredSec - workedSec);
+  const completed = workedSec >= requiredSec;
+  const firstIn = swipes.length ? parseUtc(swipes[0].punchDateTime) : null;
+
+  // Break bookkeeping: every IN after the first marks a returned-from break.
+  const inCount = swipes.reduce((n, s) => n + (s.inOutIndicator === 1 ? 1 : 0), 0);
+  const breakCount = Math.max(0, inCount - 1);
+  let lastBreakSec = null;
+  let lastInIdx = -1;
+  for (let i = 0; i < swipes.length; i++) if (swipes[i].inOutIndicator === 1) lastInIdx = i;
+  if (lastInIdx > 0) {
+    lastBreakSec = Math.max(
+      0,
+      (parseUtc(swipes[lastInIdx].punchDateTime) - parseUtc(swipes[lastInIdx - 1].punchDateTime)) / 1000
+    );
+  }
+
+  // Leave-time floor + break budget.
+  // You can't leave before `leaveMinutes` (clock time), and you still owe
+  // `requiredSec` of work. Break budget is the slack between the two.
+  // Break taken is independent of the leave time, so it works on past days too.
+  // Reference: live now while clocked in / today; else the last swipe of the day.
+  let breakTakenSec = null;
+  if (firstIn) {
+    const refEnd = clockedIn || countLive
+      ? now
+      : last
+      ? parseUtc(last.punchDateTime)
+      : now;
+    breakTakenSec = Math.max(0, (refEnd - firstIn) / 1000 - workedSec);
+  }
+
+  const leaveMinutes = opts.leaveMinutes;
+  let earliestLeave = null;
+  let tillLeaveSec = null;
+  let canLeave = null;
+  let breakBudgetSec = null;
+  let breakLeftSec = null;
+  if (leaveMinutes != null && firstIn) {
+    const leaveAt = new Date(now);
+    leaveAt.setHours(0, 0, 0, 0);
+    leaveAt.setMinutes(leaveMinutes);
+    const completeAt = new Date(now.getTime() + remainingSec * 1000);
+    earliestLeave = new Date(Math.max(leaveAt.getTime(), completeAt.getTime()));
+    tillLeaveSec = Math.max(0, (earliestLeave - now) / 1000);
+    canLeave = tillLeaveSec <= 0;
+    breakBudgetSec = Math.max(0, (leaveAt - firstIn) / 1000 - requiredSec);
+    breakLeftSec = Math.max(0, breakBudgetSec - (breakTakenSec || 0));
+  }
+
+  return {
+    workedSec,
+    remainingSec,
+    requiredSec,
+    progress: requiredSec > 0 ? Math.min(1, workedSec / requiredSec) : 0,
+    clockedIn,
+    completed,
+    firstIn,
+    earliestLeave,
+    tillLeaveSec,
+    canLeave,
+    breakBudgetSec,
+    breakTakenSec,
+    breakLeftSec,
+    breakCount,
+    lastBreakSec,
+    segments,
+    lastSwipe: last ? parseUtc(last.punchDateTime) : null,
+    lastIsOut: last ? last.inOutIndicator === 0 : false,
+    pairCount: pairs.length,
+    hasData: swipes.length > 0,
+  };
+}
+
+// --- Cache (stale-while-revalidate) ---------------------------------------
+// Keyed by date string so the popup can paint instantly from the last state
+// while it revalidates in the background. Capped to a few recent days.
+const CACHE_MAX_DAYS = 5;
+
+export async function loadCache() {
+  const { cache } = await chrome.storage.local.get("cache");
+  return cache || {};
+}
+
+export async function saveCache(dateKey, data) {
+  const cache = await loadCache();
+  cache[dateKey] = { data, at: Date.now() };
+  for (const k of Object.keys(cache).sort().slice(0, -CACHE_MAX_DAYS)) {
+    delete cache[k];
+  }
+  await chrome.storage.local.set({ cache });
+  return cache[dateKey];
+}
+
+export function fmtAge(ms) {
+  const s = Math.max(0, Math.round((Date.now() - ms) / 1000));
+  if (s < 60) return "just now";
+  const m = Math.round(s / 60);
+  if (m < 60) return `${m} min ago`;
+  const h = Math.round(m / 60);
+  return `${h}h ago`;
+}
+
+// Sets the toolbar badge from a computeAttendance result. Works from both the
+// popup and the service worker (chrome.action is available in both).
+export function applyBadge(r) {
+  if (typeof chrome === "undefined" || !chrome.action) return;
+  // Prefer "time until you can leave" (honours the 7pm floor); fall back to work remaining.
+  const done = r.canLeave != null ? r.canLeave : r.completed;
+  const secs = r.tillLeaveSec != null ? r.tillLeaveSec : r.remainingSec;
+  if (done) {
+    chrome.action.setBadgeText({ text: "✓" });
+    chrome.action.setBadgeBackgroundColor({ color: "#2e7d32" });
+    return;
+  }
+  const mins = Math.round(secs / 60);
+  const text = mins >= 60 ? `${Math.floor(mins / 60)}h` : `${mins}m`;
+  chrome.action.setBadgeText({ text });
+  chrome.action.setBadgeBackgroundColor({ color: r.clockedIn ? "#1565c0" : "#9e9e9e" });
+}
+
+// Fires a one-per-day desktop notification the moment you're free to leave.
+export async function maybeNotifyLeave(r) {
+  if (typeof chrome === "undefined" || !chrome.notifications) return;
+  if (!r || !r.canLeave) return;
+  const today = todayStr();
+  const { notifiedLeaveDate } = await chrome.storage.local.get("notifiedLeaveDate");
+  if (notifiedLeaveDate === today) return;
+  await chrome.storage.local.set({ notifiedLeaveDate: today });
+  chrome.notifications.create("leave-" + today, {
+    type: "basic",
+    iconUrl: "icons/icon128.png",
+    title: "Ready to leave 🎉",
+    message: "You've completed your hours and it's past your leave time.",
+    priority: 2,
+  });
+}
+
+// Gentle "almost there" heads-up, once per day, when you're within `minutes`
+// of being able to leave.
+export async function maybeNotifyHeadsUp(r, minutes = DEFAULT_HEADSUP_MINUTES) {
+  if (typeof chrome === "undefined" || !chrome.notifications) return;
+  if (!r || minutes <= 0 || r.tillLeaveSec == null || r.canLeave) return;
+  if (r.tillLeaveSec > minutes * 60 || r.tillLeaveSec <= 0) return;
+  const today = todayStr();
+  const { headsUpDate } = await chrome.storage.local.get("headsUpDate");
+  if (headsUpDate === today) return;
+  await chrome.storage.local.set({ headsUpDate: today });
+  const mins = Math.max(1, Math.round(r.tillLeaveSec / 60));
+  chrome.notifications.create("headsup-" + today, {
+    type: "basic",
+    iconUrl: "icons/icon128.png",
+    title: `${mins} min till you can leave`,
+    message: "Almost there — start wrapping up.",
+    priority: 1,
+  });
+}
+
+// When you return from a break (a new IN appears), tell you how long it was and
+// your updated earliest-leave time. Baselines silently on the first sync of the
+// day so pre-existing breaks don't fire on load.
+export async function maybeNotifyBreak(r) {
+  if (typeof chrome === "undefined" || !chrome.notifications) return;
+  if (!r || !r.hasData) return;
+  const today = todayStr();
+  const breaks = r.breakCount || 0;
+  const { breakNotify } = await chrome.storage.local.get("breakNotify");
+
+  if (!breakNotify || breakNotify.date !== today) {
+    await chrome.storage.local.set({ breakNotify: { date: today, count: breaks } });
+    return; // baseline only
+  }
+  if (breaks <= breakNotify.count) {
+    if (breaks !== breakNotify.count) {
+      await chrome.storage.local.set({ breakNotify: { date: today, count: breaks } });
+    }
+    return;
+  }
+  await chrome.storage.local.set({ breakNotify: { date: today, count: breaks } });
+  const dur = r.lastBreakSec != null ? fmtDuration(r.lastBreakSec) : "a";
+  const leaveStr = r.earliestLeave ? fmtClock(r.earliestLeave) : null;
+  chrome.notifications.create("break-" + today + "-" + breaks, {
+    type: "basic",
+    iconUrl: "icons/icon128.png",
+    title: `Back from a ${dur} break`,
+    message: leaveStr ? `You can now leave at ${leaveStr}.` : "Back on the clock.",
+    priority: 1,
+  });
+}
+
+export function fmtDuration(sec) {
+  sec = Math.max(0, Math.round(sec));
+  const h = Math.floor(sec / 3600);
+  const m = Math.floor((sec % 3600) / 60);
+  if (h && m) return `${h}h ${m}m`;
+  if (h) return `${h}h`;
+  return `${m}m`;
+}
+
+export function fmtClock(date) {
+  if (!date) return "--";
+  return date.toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" });
+}
+
+// insights avgInTime/avgOutTime are seconds-from-midnight in local (IST) time.
+export function clockFromSeconds(sec) {
+  if (sec == null) return "--";
+  const d = new Date();
+  d.setHours(0, 0, 0, 0);
+  d.setSeconds(Math.round(sec));
+  return fmtClock(d);
+}

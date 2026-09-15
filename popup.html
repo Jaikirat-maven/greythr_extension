@@ -1,0 +1,82 @@
+<!DOCTYPE html>
+<html>
+  <head>
+    <meta charset="utf-8" />
+    <link rel="stylesheet" href="popup.css" />
+  </head>
+  <body>
+    <div id="app">
+      <div class="topbar">
+        <div class="brand">
+          <span class="dotmark"></span>
+          <span>greytHR</span>
+        </div>
+        <div class="datenav">
+          <button id="prevDay" class="nav" title="Previous day">‹</button>
+          <button id="dateLabel" class="datelabel" title="Jump to today">Today</button>
+          <button id="nextDay" class="nav" title="Next day">›</button>
+        </div>
+        <button id="refresh" class="icon" title="Refresh">⟳</button>
+      </div>
+
+      <div id="notice" class="notice hidden"></div>
+
+      <div id="state" class="state hidden"></div>
+
+      <div id="main" class="hidden">
+        <div class="ringwrap" id="ringBtn" title="Tap to switch view">
+          <svg viewBox="0 0 120 120" class="ring">
+            <defs>
+              <linearGradient id="grad" x1="0" y1="0" x2="1" y2="1">
+                <stop offset="0%" stop-color="#3b82f6" />
+                <stop offset="100%" stop-color="#6366f1" />
+              </linearGradient>
+            </defs>
+            <circle class="ring-bg" cx="60" cy="60" r="52" />
+            <circle id="ringFg" class="ring-fg" cx="60" cy="60" r="52" />
+          </svg>
+          <div class="ringcenter">
+            <div class="ringlabel" id="centerLabel">left</div>
+            <div class="ringvalue" id="centerValue">--</div>
+            <div class="pill" id="statusPill">--</div>
+            <div class="dots" id="modeDots"></div>
+          </div>
+        </div>
+
+        <div class="stats">
+          <div class="stat">
+            <span class="statlabel">Worked</span>
+            <b id="worked">--</b>
+          </div>
+          <div class="stat">
+            <span class="statlabel" id="lblB">Break left</span>
+            <b id="statB">--</b>
+          </div>
+          <div class="stat">
+            <span class="statlabel" id="lblC">Leave at</span>
+            <b id="statC">--</b>
+          </div>
+          <div class="stat">
+            <span class="statlabel">First in</span>
+            <b id="firstIn">--</b>
+          </div>
+        </div>
+
+        <div class="tl-head hidden" id="tlHead">Swipes</div>
+        <div class="timeline" id="timeline"></div>
+
+        <button id="monthToggle" class="monthtoggle">
+          <span>Month overview</span>
+          <span class="chev" id="chev">▸</span>
+        </button>
+        <div id="monthPanel" class="monthpanel hidden"></div>
+      </div>
+
+      <div class="footer">
+        <a id="openPortal" href="#">Open greytHR ↗</a>
+        <a id="openOptions" href="#">Settings</a>
+      </div>
+    </div>
+    <script type="module" src="popup.js"></script>
+  </body>
+</html>
