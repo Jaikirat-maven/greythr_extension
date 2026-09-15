@@ -71,6 +71,7 @@
       button:hover { transform: translateY(-1px); box-shadow: 0 6px 16px rgba(59, 130, 246, 0.38); }
       button:active { transform: translateY(0); }
       #saved { margin-left: 12px; color: var(--green); font-size: 13px; font-weight: 600; }
+      .reset-link { font-size: 12px; color: var(--blue); cursor: pointer; }
 
       /* Theme segmented control */
       .seg { display: inline-flex; background: var(--card); border-radius: 10px; padding: 3px; gap: 2px; }
@@ -145,6 +146,20 @@
     <label>Employee ID</label>
     <input type="text" id="empId" placeholder="auto-detected" />
     <div class="hint">Detected automatically from the portal. Override only if needed.</div>
+
+    <label>ESS login — automatic re-login</label>
+    <input type="text" id="gtUser" placeholder="Employee no. or email" autocomplete="username" />
+    <div style="height:8px"></div>
+    <input type="password" id="gtPass" placeholder="greytHR password" autocomplete="current-password" />
+    <div class="hint">Saved <b>only on this device</b> (browser local storage, never synced or sent anywhere except the greytHR login page). When your session expires, the extension opens the login page in a background tab, signs you in, and closes the tab.</div>
+    <label class="autologin-row" style="display:flex;align-items:center;gap:8px;margin-top:10px;font-weight:600;font-size:13px;">
+      <input type="checkbox" id="autoLogin" style="width:auto;" />
+      <span>Automatically sign me back in when the session expires</span>
+    </label>
+    <div>
+      <a id="clearCreds" class="reset-link" style="cursor:pointer;">Forget saved login</a>
+      <span id="credState" class="hint" style="margin-left:8px;"></span>
+    </div>
 
     <div>
       <button id="save">Save</button>

@@ -59,6 +59,9 @@ async function restore() {
     "empId",
     "theme",
     "accent",
+    "gtUser",
+    "gtPass",
+    "autoLogin",
   ]);
   theme = store.theme || DEFAULT_THEME;
   accent = store.accent || DEFAULT_ACCENT;
@@ -73,6 +76,15 @@ async function restore() {
   $("headsUp").value = store.headsUpMinutes ?? DEFAULT_HEADSUP_MINUTES;
   $("subdomain").value = store.subdomain || "";
   $("empId").value = store.empId || "";
+  $("gtUser").value = store.gtUser || "";
+  $("gtPass").value = store.gtPass || "";
+  $("autoLogin").checked = store.autoLogin !== false;
+  paintCredState(!!store.gtUser);
+}
+
+function paintCredState(saved) {
+  const el = $("credState");
+  if (el) el.textContent = saved ? "Login saved on this device." : "No login saved.";
 }
 
 async function save() {
@@ -93,7 +105,24 @@ async function save() {
   const empId = $("empId").value.trim();
   if (empId) patch.empId = empId;
 
+  // ESS credentials for auto re-login (device-local only). Saving new values
+  // resets the failure backoff so a corrected password retries immediately.
+  const gtUser = $("gtUser").value.trim();
+  const gtPass = $("gtPass").value;
+  if (gtUser && gtPass) {
+    patch.gtUser = gtUser;
+    patch.gtPass = gtPass;
+    patch.autoLoginFailCount = 0;
+  } else if (!gtUser && !gtPass) {
+    // Both blank → leave stored creds untouched (user may only tweak hours).
+  } else {
+    $("saved").textContent = "Enter both username and password (or neither).";
+    return;
+  }
+  patch.autoLogin = $("autoLogin").checked;
+
   await chrome.storage.local.set(patch);
+  paintCredState(!!(gtUser || (await chrome.storage.local.get("gtUser")).gtUser));
   $("saved").textContent = "Saved ✓";
   setTimeout(() => ($("saved").textContent = ""), 1500);
 }
@@ -102,4 +131,19 @@ async function save() {
 matchMedia("(prefers-color-scheme: dark)").addEventListener("change", paintAppearance);
 
 $("save").addEventListener("click", save);
+$("clearCreds").addEventListener("click", async () => {
+  await chrome.storage.local.remove([
+    "gtUser",
+    "gtPass",
+    "autoLoginPendingAt",
+    "autoLoginTabId",
+    "autoLoginReason",
+    "autoLoginFailCount",
+  ]);
+  $("gtUser").value = "";
+  $("gtPass").value = "";
+  paintCredState(false);
+  $("saved").textContent = "Login forgotten ✓";
+  setTimeout(() => ($("saved").textContent = ""), 1500);
+});
 restore();

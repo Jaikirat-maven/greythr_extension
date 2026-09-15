@@ -9,6 +9,8 @@ import {
   maybeNotifyBreak,
   saveCache,
   loadCache,
+  requestAutoLogin,
+  getAutoLoginSettings,
   fmtAge,
   fmtDuration,
   fmtClock,
@@ -346,20 +348,39 @@ async function load() {
     if (cached) {
       // Keep showing the last known state; just tell the user it's stale.
       if (e.code === 401) {
-        showNotice(
-          `Session expired — <a data-portal href="#">sign in to greytHR</a> to update. Showing last state (${fmtAge(cached.at)}).`,
-          "error"
-        );
+        const auto = await getAutoLoginSettings().catch(() => null);
+        if (auto && auto.enabled && auto.failCount < 3) {
+          requestAutoLogin(store.subdomain, "popup-401").catch(() => {});
+          showNotice(
+            `Session expired — signing you back in… (the login tab closes itself). Showing last state (${fmtAge(cached.at)}).`,
+            "warn"
+          );
+        } else {
+          showNotice(
+            `Session expired — <a data-portal href="#">sign in to greytHR</a> to update. Showing last state (${fmtAge(cached.at)}).`,
+            "error"
+          );
+        }
       } else {
         showNotice(`Couldn't refresh — showing last state (${fmtAge(cached.at)}).`, "warn");
       }
     } else if (e.code === 401) {
-      showState(
-        'Your greytHR session has expired.' +
-          '<a class="btn" data-portal href="#">Sign in to greytHR</a>' +
-          '<span class="hintsm">Live updates resume automatically once you sign in.</span>',
-        true
-      );
+      const auto = await getAutoLoginSettings().catch(() => null);
+      if (auto && auto.enabled && auto.failCount < 3) {
+        requestAutoLogin(store.subdomain, "popup-401").catch(() => {});
+        showState(
+          'Your greytHR session expired — signing you back in…' +
+            '<span class="hintsm">The login tab closes itself. Live updates resume automatically. If this keeps showing, check your saved credentials in Settings.</span>',
+          true
+        );
+      } else {
+        showState(
+          'Your greytHR session has expired.' +
+            '<a class="btn" data-portal href="#">Sign in to greytHR</a>' +
+            '<span class="hintsm">Live updates resume automatically once you sign in. Tip: save your login in Settings for automatic re-login.</span>',
+          true
+        );
+      }
     } else {
       showState(
         "Couldn't reach greytHR: " + e.message +

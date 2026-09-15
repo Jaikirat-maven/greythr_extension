@@ -399,6 +399,77 @@ export async function maybeNotifyBreak(r) {
   });
 }
 
+// --- Auto-login (credential autofill via the real login page) ----------------
+// Credentials are stored in chrome.storage.local (this device only, never
+// synced or sent anywhere except the greytHR login form). There is no secure
+// enclave available to MV3 extensions, so this is opt-in plaintext storage.
+const AUTO_LOGIN_COOLDOWN_MS = 5 * 60 * 1000;
+const AUTO_LOGIN_MAX_FAILS = 3;
+
+export async function getAutoLoginSettings() {
+  const s = await chrome.storage.local.get([
+    "gtUser",
+    "gtPass",
+    "autoLogin",
+    "autoLoginPendingAt",
+    "autoLoginTabId",
+    "autoLoginLastAttempt",
+    "autoLoginFailCount",
+  ]);
+  return {
+    user: (s.gtUser || "").trim(),
+    pass: s.gtPass || "",
+    enabled: s.autoLogin !== false && !!(s.gtUser && s.gtPass),
+    pendingAt: s.autoLoginPendingAt || 0,
+    tabId: s.autoLoginTabId ?? null,
+    lastAttempt: s.autoLoginLastAttempt || 0,
+    failCount: s.autoLoginFailCount || 0,
+  };
+}
+
+// Called on a 401 (or from the popup's "sign in" state). Opens the greytHR
+// login page in a background tab; autologin.js fills + submits it, and the
+// background worker closes the tab once the session is back. Returns true if
+// a login tab was (or is already) in flight.
+export async function requestAutoLogin(subdomain, reason = "") {
+  if (!subdomain) return false;
+  const s = await getAutoLoginSettings();
+  if (!s.enabled) return false;
+  if (s.failCount >= AUTO_LOGIN_MAX_FAILS) return false; // bad creds — stop looping
+  // Reuse the in-flight tab if it's still around (checked before the
+  // cooldown so concurrent 401s don't report "no login happening").
+  if (s.tabId != null) {
+    try {
+      await chrome.tabs.get(s.tabId);
+      return true;
+    } catch {
+      // tab is gone — fall through and open a fresh one (subject to cooldown)
+    }
+  }
+  const now = Date.now();
+  // Cooling down after a recent attempt that is no longer in flight (e.g. it
+  // failed and its tab is gone). Return false so callers show the manual
+  // sign-in path instead of claiming a login is happening.
+  if (now - s.lastAttempt < AUTO_LOGIN_COOLDOWN_MS) return false;
+  const url = `https://${subdomain}.greythr.com/`;
+  const tab = await chrome.tabs.create({ url, active: false });
+  await chrome.storage.local.set({
+    autoLoginPendingAt: now,
+    autoLoginLastAttempt: now,
+    autoLoginTabId: tab.id,
+    autoLoginReason: reason,
+  });
+  return true;
+}
+
+export async function clearAutoLoginState() {
+  await chrome.storage.local.remove([
+    "autoLoginPendingAt",
+    "autoLoginTabId",
+    "autoLoginReason",
+  ]);
+}
+
 export function fmtDuration(sec) {
   sec = Math.max(0, Math.round(sec));
   const h = Math.floor(sec / 3600);

@@ -8,7 +8,10 @@ today, computed from your greytHR attendance swipes.
 - greytHR's portal fetches your swipes from
   `https://<subdomain>.greythr.com/latte/v3/attendance/info/<empId>/swipes`.
 - The extension calls the **same endpoint** with `credentials: 'include'`, so it
-  reuses your existing greytHR login (session cookies). No passwords are stored.
+  reuses your existing greytHR login (session cookies). By default no passwords
+  are stored; if you opt in on the Settings page, your ESS username/password
+  are kept in device-local browser storage and used to sign you back in
+  automatically when the session expires (the login tab closes itself).
 - `swipePairs[].actualHours` are in **seconds**; the API also sums them as
   `totalActualHours`. If your last swipe is an IN with no matching OUT, the
   extension adds live time up to *now*.
