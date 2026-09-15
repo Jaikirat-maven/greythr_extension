@@ -4,6 +4,97 @@ export const DEFAULT_REQUIRED_MINUTES = 510; // 8h30m — change in Options to m
 export const DEFAULT_LEAVE_MINUTES = 19 * 60; // 7:00 PM — earliest you can leave.
 export const DEFAULT_HEADSUP_MINUTES = 10; // "N min till you can leave" heads-up.
 
+// --- Theming --------------------------------------------------------------
+export const DEFAULT_THEME = "auto"; // auto | light | dark
+export const DEFAULT_ACCENT = "#3b82f6"; // hex; a preset key is also accepted
+export const ACCENTS = {
+  blue: ["#3b82f6", "#6366f1"],
+  violet: ["#8b5cf6", "#6366f1"],
+  green: ["#10b981", "#059669"],
+  teal: ["#14b8a6", "#0ea5e9"],
+  rose: ["#f43f5e", "#ec4899"],
+  amber: ["#f59e0b", "#f97316"],
+};
+// Per-state colors (the ring/pill change with the situation).
+export const DEFAULT_STATE_COLORS = {
+  done: "#22c55e", // complete / ready to leave
+  waiting: "#f59e0b", // clocked out / work done, waiting for leave time
+  over: "#ef4444", // over the break budget
+};
+
+// --- small hex/HSL helpers (for deriving a gradient from one accent color) --
+function hexToRgb(h) {
+  h = String(h).replace("#", "");
+  if (h.length === 3) h = h.split("").map((c) => c + c).join("");
+  const n = parseInt(h, 16);
+  return [(n >> 16) & 255, (n >> 8) & 255, n & 255];
+}
+function rgbToHex(r, g, b) {
+  return "#" + [r, g, b].map((v) => Math.max(0, Math.min(255, Math.round(v))).toString(16).padStart(2, "0")).join("");
+}
+function rgbToHsl(r, g, b) {
+  r /= 255; g /= 255; b /= 255;
+  const max = Math.max(r, g, b), min = Math.min(r, g, b);
+  let h = 0, s = 0, l = (max + min) / 2;
+  if (max !== min) {
+    const d = max - min;
+    s = l > 0.5 ? d / (2 - max - min) : d / (max + min);
+    if (max === r) h = (g - b) / d + (g < b ? 6 : 0);
+    else if (max === g) h = (b - r) / d + 2;
+    else h = (r - g) / d + 4;
+    h /= 6;
+  }
+  return [h * 360, s, l];
+}
+function hslToRgb(h, s, l) {
+  h /= 360;
+  if (s === 0) return [l * 255, l * 255, l * 255];
+  const hue2rgb = (p, q, t) => {
+    if (t < 0) t += 1;
+    if (t > 1) t -= 1;
+    if (t < 1 / 6) return p + (q - p) * 6 * t;
+    if (t < 1 / 2) return q;
+    if (t < 2 / 3) return p + (q - p) * (2 / 3 - t) * 6;
+    return p;
+  };
+  const q = l < 0.5 ? l * (1 + s) : l + s - l * s;
+  const p = 2 * l - q;
+  return [hue2rgb(p, q, h + 1 / 3) * 255, hue2rgb(p, q, h) * 255, hue2rgb(p, q, h - 1 / 3) * 255];
+}
+// A single accent hex → a pleasant two-stop gradient (hue-shifted second stop).
+export function deriveGradient(hex) {
+  const [r, g, b] = hexToRgb(hex);
+  const [h, s, l] = rgbToHsl(r, g, b);
+  const [r2, g2, b2] = hslToRgb((h + 18) % 360, s, Math.min(1, l * 1.03));
+  return [hex, rgbToHex(r2, g2, b2)];
+}
+
+// Applies theme (resolving "auto" against the OS), accent and state colors to
+// <html>. Only call from a document context (popup/options), not the SW.
+export function applyTheme(theme = DEFAULT_THEME, accent = DEFAULT_ACCENT, colors) {
+  if (typeof document === "undefined") return;
+  const root = document.documentElement;
+  const resolved =
+    theme === "auto"
+      ? matchMedia("(prefers-color-scheme: dark)").matches
+        ? "dark"
+        : "light"
+      : theme || "light";
+  root.setAttribute("data-theme", resolved);
+
+  let a1, a2;
+  if (accent && ACCENTS[accent]) [a1, a2] = ACCENTS[accent];
+  else if (typeof accent === "string" && accent[0] === "#") [a1, a2] = deriveGradient(accent);
+  else [a1, a2] = deriveGradient(DEFAULT_ACCENT);
+  root.style.setProperty("--blue", a1);
+  root.style.setProperty("--indigo", a2);
+
+  const c = colors || {};
+  root.style.setProperty("--green", c.done || DEFAULT_STATE_COLORS.done);
+  root.style.setProperty("--amber", c.waiting || DEFAULT_STATE_COLORS.waiting);
+  root.style.setProperty("--red", c.over || DEFAULT_STATE_COLORS.over);
+}
+
 // greytHR sends punchDateTime as ISO *without* a timezone, but the value is UTC.
 // Parsing it as UTC keeps a live "still clocked in" segment correct against local `now`.
 export function parseUtc(s) {

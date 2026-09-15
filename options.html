@@ -9,11 +9,9 @@
         --blue: #3b82f6; --indigo: #6366f1; --green: #22c55e;
         --bg: #ffffff; --card: #f7f9fc;
       }
-      @media (prefers-color-scheme: dark) {
-        :root {
-          --ink: #f1f5f9; --muted: #94a3b8; --line: #1e293b;
-          --bg: #0d1420; --card: #16202e;
-        }
+      :root[data-theme="dark"] {
+        --ink: #f1f5f9; --muted: #94a3b8; --line: #1e293b;
+        --bg: #0d1420; --card: #16202e;
       }
       body {
         font-family: -apple-system, "Segoe UI", Roboto, sans-serif;
@@ -73,11 +71,57 @@
       button:hover { transform: translateY(-1px); box-shadow: 0 6px 16px rgba(59, 130, 246, 0.38); }
       button:active { transform: translateY(0); }
       #saved { margin-left: 12px; color: var(--green); font-size: 13px; font-weight: 600; }
+
+      /* Theme segmented control */
+      .seg { display: inline-flex; background: var(--card); border-radius: 10px; padding: 3px; gap: 2px; }
+      .seg button {
+        margin: 0; padding: 7px 16px; border-radius: 8px; background: none;
+        color: var(--muted); box-shadow: none; font-size: 13px; font-weight: 600;
+      }
+      .seg button:hover { transform: none; box-shadow: none; color: var(--ink); }
+      .seg button.active { background: linear-gradient(135deg, var(--blue), var(--indigo)); color: #fff; }
+
+      /* Accent swatches */
+      .swatches { display: flex; gap: 10px; }
+      .swatch {
+        width: 30px; height: 30px; border-radius: 50%; cursor: pointer; padding: 0; margin: 0;
+        border: 2px solid transparent; box-shadow: none; transition: transform 0.12s;
+      }
+      .swatch:hover { transform: scale(1.1); box-shadow: none; }
+      .swatch.active { border-color: var(--ink); }
     </style>
   </head>
   <body>
     <div class="brand"><span class="dotmark"></span><span>greytHR</span></div>
     <h1>Time Remaining — Settings</h1>
+
+    <label>Appearance</label>
+    <div class="seg" id="themeSeg">
+      <button data-theme-val="auto">Auto</button>
+      <button data-theme-val="light">Light</button>
+      <button data-theme-val="dark">Dark</button>
+    </div>
+    <div class="hint">Auto follows your system. Changes preview instantly.</div>
+
+    <label>Accent color</label>
+    <div class="accent-row">
+      <div class="swatches" id="accentSwatches"></div>
+      <span class="accent-div"></span>
+      <label class="wheel" title="Pick any color">
+        <input type="color" id="accentCustom" />
+      </label>
+    </div>
+    <div class="hint">Pick a preset or use the wheel for any color.</div>
+
+    <details class="adv">
+      <summary>Advanced: status colors</summary>
+      <div class="statecolors">
+        <label class="sc"><input type="color" id="colDone" /><span>Done / ready</span></label>
+        <label class="sc"><input type="color" id="colWaiting" /><span>Waiting / break</span></label>
+        <label class="sc"><input type="color" id="colOver" /><span>Over break</span></label>
+      </div>
+      <a id="resetColors" class="reset-link">Reset status colors</a>
+    </details>
 
     <label>Required working hours per day</label>
     <div class="req">
@@ -107,6 +151,6 @@
       <span id="saved"></span>
     </div>
 
-    <script src="options.js"></script>
+    <script type="module" src="options.js"></script>
   </body>
 </html>

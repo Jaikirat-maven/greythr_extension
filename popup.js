@@ -15,10 +15,24 @@ import {
   clockFromSeconds,
   todayStr,
   monthStartStr,
+  applyTheme,
   DEFAULT_REQUIRED_MINUTES,
   DEFAULT_LEAVE_MINUTES,
   DEFAULT_HEADSUP_MINUTES,
+  DEFAULT_THEME,
+  DEFAULT_ACCENT,
 } from "./shared.js";
+
+async function applyStoredTheme() {
+  const { theme, accent, colors } = await chrome.storage.local.get([
+    "theme",
+    "accent",
+    "colors",
+  ]);
+  applyTheme(theme || DEFAULT_THEME, accent || DEFAULT_ACCENT, colors);
+}
+applyStoredTheme();
+matchMedia("(prefers-color-scheme: dark)").addEventListener("change", applyStoredTheme);
 
 const $ = (id) => document.getElementById(id);
 const RING_C = 2 * Math.PI * 52; // circumference of the progress ring
@@ -546,6 +560,7 @@ $("dateLabel").addEventListener("click", () => {
 // is open, pick it up live without the user doing anything.
 chrome.storage.onChanged.addListener((changes, area) => {
   if (area !== "local") return;
+  if (changes.theme || changes.accent || changes.colors) applyStoredTheme();
   // Employee ID just got detected (e.g. right after first-time sign-in) → link now.
   if (changes.empId && changes.empId.newValue && !changes.empId.oldValue) {
     load();

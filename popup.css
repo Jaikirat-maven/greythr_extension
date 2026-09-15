@@ -15,18 +15,17 @@
   --ring-track: #eef2f7;
   --shadow: 0 1px 2px rgba(15, 23, 42, 0.04);
 }
-@media (prefers-color-scheme: dark) {
-  :root {
-    --ink: #f1f5f9;
-    --muted: #94a3b8;
-    --faint: #64748b;
-    --line: #1e293b;
-    --card: #16202e;
-    --card-hover: #1c2838;
-    --bg: #0d1420;
-    --ring-track: #1e293b;
-    --shadow: none;
-  }
+/* Theme is resolved to light/dark in JS (applyTheme), so no media queries. */
+:root[data-theme="dark"] {
+  --ink: #f1f5f9;
+  --muted: #94a3b8;
+  --faint: #64748b;
+  --line: #1e293b;
+  --card: #16202e;
+  --card-hover: #1c2838;
+  --bg: #0d1420;
+  --ring-track: #1e293b;
+  --shadow: none;
 }
 
 body {
@@ -115,6 +114,8 @@ body {
 .ringwrap:hover .ringvalue { opacity: 0.9; }
 .ringwrap:active { transform: scale(0.985); }
 .ring { width: 172px; height: 172px; transform: rotate(-90deg); }
+#grad .g1 { stop-color: var(--blue); }
+#grad .g2 { stop-color: var(--indigo); }
 .ring-bg { fill: none; stroke: var(--ring-track); stroke-width: 9; }
 .ring-fg {
   fill: none;
@@ -345,11 +346,9 @@ body {
 .mcell.s-h { background: rgba(99, 102, 241, 0.18); color: #4f46e5; }
 .mcell.s-o { background: transparent; color: var(--faint); }
 .mcell.s-none { background: var(--card); color: var(--muted); }
-@media (prefers-color-scheme: dark) {
-  .mcell.s-p { color: #4ade80; }
-  .mcell.s-a { color: #fca5a5; }
-  .mcell.s-h { color: #a5b4fc; }
-}
+:root[data-theme="dark"] .mcell.s-p { color: #4ade80; }
+:root[data-theme="dark"] .mcell.s-a { color: #fca5a5; }
+:root[data-theme="dark"] .mcell.s-h { color: #a5b4fc; }
 
 .legend {
   display: flex;
@@ -402,12 +401,10 @@ body {
 .notice.error { background: rgba(239, 68, 68, 0.13); color: #b42318; }
 .notice.error a { color: #b42318; }
 .notice.info { background: var(--card); color: var(--muted); }
-@media (prefers-color-scheme: dark) {
-  .notice.warn { color: #fbbf24; }
-  .notice.warn a { color: #fbbf24; }
-  .notice.error { color: #fca5a5; }
-  .notice.error a { color: #fca5a5; }
-}
+:root[data-theme="dark"] .notice.warn,
+:root[data-theme="dark"] .notice.warn a { color: #fbbf24; }
+:root[data-theme="dark"] .notice.error,
+:root[data-theme="dark"] .notice.error a { color: #fca5a5; }
 
 /* First-run setup */
 .setup { text-align: left; padding: 14px 4px 6px; }
