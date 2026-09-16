@@ -330,6 +330,33 @@ export function applyBadge(r) {
   chrome.action.setBadgeBackgroundColor({ color: r.clockedIn ? "#1565c0" : "#9e9e9e" });
 }
 
+// Creates a notification and resolves only once Chrome confirms it — awaiting
+// this keeps the MV3 worker alive until the notification actually exists.
+// Returns true on success so callers can set their once-per-day guard AFTER
+// the notification fired (so a killed worker retries instead of silently
+// suppressing it for the rest of the day).
+export function notify(id, { title, message, priority = 1 }) {
+  return new Promise((resolve) => {
+    if (typeof chrome === "undefined" || !chrome.notifications) {
+      resolve(false);
+      return;
+    }
+    const iconUrl =
+      chrome.runtime && chrome.runtime.getURL
+        ? chrome.runtime.getURL("icons/icon128.png")
+        : "icons/icon128.png";
+    try {
+      chrome.notifications.create(id, { type: "basic", iconUrl, title, message, priority }, () => {
+        // lastError is read to avoid an "unchecked runtime.lastError" warning.
+        void chrome.runtime.lastError;
+        resolve(true);
+      });
+    } catch {
+      resolve(false);
+    }
+  });
+}
+
 // Fires a one-per-day desktop notification the moment you're free to leave.
 export async function maybeNotifyLeave(r) {
   if (typeof chrome === "undefined" || !chrome.notifications) return;
@@ -337,14 +364,12 @@ export async function maybeNotifyLeave(r) {
   const today = todayStr();
   const { notifiedLeaveDate } = await chrome.storage.local.get("notifiedLeaveDate");
   if (notifiedLeaveDate === today) return;
-  await chrome.storage.local.set({ notifiedLeaveDate: today });
-  chrome.notifications.create("leave-" + today, {
-    type: "basic",
-    iconUrl: "icons/icon128.png",
+  const ok = await notify("leave-" + today, {
     title: "Ready to leave 🎉",
     message: "You've completed your hours and it's past your leave time.",
     priority: 2,
   });
+  if (ok) await chrome.storage.local.set({ notifiedLeaveDate: today });
 }
 
 // Gentle "almost there" heads-up, once per day, when you're within `minutes`
@@ -356,15 +381,13 @@ export async function maybeNotifyHeadsUp(r, minutes = DEFAULT_HEADSUP_MINUTES) {
   const today = todayStr();
   const { headsUpDate } = await chrome.storage.local.get("headsUpDate");
   if (headsUpDate === today) return;
-  await chrome.storage.local.set({ headsUpDate: today });
   const mins = Math.max(1, Math.round(r.tillLeaveSec / 60));
-  chrome.notifications.create("headsup-" + today, {
-    type: "basic",
-    iconUrl: "icons/icon128.png",
+  const ok = await notify("headsup-" + today, {
     title: `${mins} min till you can leave`,
     message: "Almost there — start wrapping up.",
     priority: 1,
   });
+  if (ok) await chrome.storage.local.set({ headsUpDate: today });
 }
 
 // When you return from a break (a new IN appears), tell you how long it was and
@@ -387,16 +410,14 @@ export async function maybeNotifyBreak(r) {
     }
     return;
   }
-  await chrome.storage.local.set({ breakNotify: { date: today, count: breaks } });
   const dur = r.lastBreakSec != null ? fmtDuration(r.lastBreakSec) : "a";
   const leaveStr = r.earliestLeave ? fmtClock(r.earliestLeave) : null;
-  chrome.notifications.create("break-" + today + "-" + breaks, {
-    type: "basic",
-    iconUrl: "icons/icon128.png",
+  const ok = await notify("break-" + today + "-" + breaks, {
     title: `Back from a ${dur} break`,
     message: leaveStr ? `You can now leave at ${leaveStr}.` : "Back on the clock.",
     priority: 1,
   });
+  if (ok) await chrome.storage.local.set({ breakNotify: { date: today, count: breaks } });
 }
 
 // --- Auto-login (credential autofill via the real login page) ----------------
@@ -468,6 +489,36 @@ export async function clearAutoLoginState() {
     "autoLoginTabId",
     "autoLoginReason",
   ]);
+}
+
+// --- Auto-open popup window -------------------------------------------------
+// Opens the popup UI in a focused window once per day when little time is
+// left. Called only from the background worker (never from the popup itself,
+// which is already open). 0 / unset = disabled.
+export const DEFAULT_AUTO_OPEN_MINUTES = 10;
+
+export async function maybeAutoOpen(r, minutes) {
+  if (typeof chrome === "undefined" || !chrome.windows || !chrome.runtime) return;
+  if (!r || !(minutes > 0)) return;
+  const done = r.canLeave != null ? r.canLeave : r.completed;
+  if (done) return; // already free to leave — the leave notification covers it
+  const secs = r.tillLeaveSec != null ? r.tillLeaveSec : r.remainingSec;
+  if (secs == null || secs <= 0 || secs > minutes * 60) return;
+  const today = todayStr();
+  const { autoOpenedDate } = await chrome.storage.local.get("autoOpenedDate");
+  if (autoOpenedDate === today) return; // once per day
+  await chrome.storage.local.set({ autoOpenedDate: today });
+  try {
+    await chrome.windows.create({
+      url: chrome.runtime.getURL("popup.html"),
+      type: "popup",
+      focused: true,
+      width: 380,
+      height: 620,
+    });
+  } catch {
+    // Window blocked/failed — stays "opened" for today to avoid spawn loops.
+  }
 }
 
 export function fmtDuration(sec) {

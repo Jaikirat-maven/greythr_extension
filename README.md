@@ -29,7 +29,7 @@ as UTC to stay correct in IST.
    (`/v3/portal/ess/attendance/attendance-info`) so the extension can
    auto-detect your subdomain + employee ID.
 4. Click the extension icon — it shows worked / remaining / leave-by. The
-   toolbar badge shows remaining minutes/hours and refreshes every 5 min.
+   toolbar badge shows remaining minutes/hours and refreshes every minute.
 
 ## Settings
 

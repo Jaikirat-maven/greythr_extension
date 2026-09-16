@@ -172,6 +172,35 @@ function hideNotice() {
   $("notice").className = "notice hidden";
 }
 
+// Background-tick diagnostic: proves the 1-min worker runs without clicks.
+async function refreshBgStatus() {
+  const el = $("bgStatus");
+  if (!el) return;
+  const s = await chrome.storage.local
+    .get(["lastBgRunAt", "lastBgStatus", "lastBgError", "autoLoginFailCount"])
+    .catch(() => ({}));
+  el.classList.remove("bad");
+  if (!s.lastBgRunAt) {
+    el.textContent = "Auto-refresh hasn't run yet in the background.";
+    return;
+  }
+  const age = fmtAge(s.lastBgRunAt);
+  if (s.lastBgStatus === "ok") {
+    el.textContent = `Auto-refresh ran ${age} ✓`;
+  } else if (s.lastBgStatus === "expired") {
+    el.classList.add("bad");
+    el.textContent =
+      (s.autoLoginFailCount || 0) >= 3
+        ? `Auto-refresh: session expired, auto sign-in stopped (check credentials in Settings) · ${age}`
+        : `Auto-refresh: session expired, signing back in… · ${age}`;
+  } else if (s.lastBgStatus === "setup") {
+    el.textContent = "Auto-refresh waiting for account link.";
+  } else {
+    el.classList.add("bad");
+    el.textContent = `Auto-refresh error ${age}: ${s.lastBgError || "unknown"}`;
+  }
+}
+
 function render() {
   if (!lastData) return;
   const live = isToday(selected);
@@ -288,6 +317,7 @@ function render() {
 
 async function load() {
   updateNav();
+  refreshBgStatus();
   if (!$("monthPanel").classList.contains("hidden")) loadMonth();
   const store = await chrome.storage.local.get([
     "subdomain",
@@ -526,40 +556,63 @@ async function showSetup() {
   el.innerHTML =
     `<div class="setup-logo"><span class="dotmark"></span></div>` +
     `<div class="setup-title">greytHR Time Remaining</div>` +
-    `<div class="setup-desc">Connect your greytHR account to see how much working time you have left today.</div>` +
-    `<button id="setupConnect" class="btn setup-btn">Connect greytHR</button>` +
-    `<div class="setup-hint">Sign in if asked — we'll detect your details automatically.</div>` +
-    `<a id="setupManual" class="setup-manual">Trouble? Enter employee ID</a>` +
-    `<div id="setupManualBox" class="hidden">` +
-    `<input id="setupEmp" type="text" placeholder="Employee ID (e.g. 93)" spellcheck="false" />` +
-    `<button id="setupSave" class="btn setup-btn setup-save">Save & link</button>` +
-    `</div>`;
+    `<div class="setup-desc">Sign in to connect your account and see your time left today.</div>` +
+    `<input id="setupUser" class="setup-input" type="text" placeholder="Employee no. or email" autocomplete="username" spellcheck="false" />` +
+    `<input id="setupPass" class="setup-input" type="password" placeholder="greytHR password" autocomplete="current-password" />` +
+    `<button id="setupConnect" class="btn setup-btn">Connect</button>` +
+    `<div class="setup-hint" id="setupHint">Saved only on this device. We sign you in automatically in a background tab — this popup updates when it's done.</div>` +
+    `<a id="setupManual" class="setup-manual">Prefer to sign in yourself? Open greytHR</a>`;
 
   $("setupConnect").addEventListener("click", onConnect);
-  $("setupManual").addEventListener("click", () =>
-    $("setupManualBox").classList.toggle("hidden")
-  );
-  $("setupSave").addEventListener("click", onManualSave);
+  $("setupManual").addEventListener("click", openPortal);
+  $("setupPass").addEventListener("keydown", (e) => {
+    if (e.key === "Enter") onConnect();
+  });
+  $("setupUser").focus();
 }
 
 async function onConnect() {
+  const user = ($("setupUser").value || "").trim();
+  const pass = $("setupPass").value || "";
   const { subdomain } = await chrome.storage.local.get("subdomain");
   const sub = subdomain || DEFAULT_SUBDOMAIN;
-  await chrome.storage.local.set({ subdomain: sub });
-  chrome.tabs.create({
-    url: `https://${sub}.greythr.com/v3/portal/ess/attendance/attendance-info`,
-  });
-}
 
-async function onManualSave() {
-  const emp = $("setupEmp").value.trim();
-  if (!emp) {
-    $("setupEmp").focus();
+  // Nothing typed → fall back to opening greytHR for a manual sign-in.
+  if (!user && !pass) return openPortal();
+  if (!user || !pass) {
+    (!user ? $("setupUser") : $("setupPass")).focus();
     return;
   }
-  const { subdomain } = await chrome.storage.local.get("subdomain");
-  await chrome.storage.local.set({ subdomain: subdomain || DEFAULT_SUBDOMAIN, empId: emp });
-  load();
+
+  // Save creds + enable auto-login (reset any prior failure backoff), then ask
+  // the background worker to open the login page and sign in automatically.
+  await chrome.storage.local.set({
+    subdomain: sub,
+    gtUser: user,
+    gtPass: pass,
+    autoLogin: true,
+    autoLoginFailCount: 0,
+  });
+  await chrome.storage.local.remove("autoLoginLastAttempt");
+
+  const btn = $("setupConnect");
+  if (btn) {
+    btn.disabled = true;
+    btn.textContent = "Connecting…";
+  }
+  const hint = $("setupHint");
+  if (hint) {
+    hint.style.color = "";
+    hint.textContent = "Signing you in… this popup will update automatically.";
+  }
+
+  try {
+    await chrome.runtime.sendMessage({ type: "GT_START_AUTOLOGIN", subdomain: sub });
+  } catch {
+    // Background asleep/unavailable — open the login page directly; the content
+    // script fills it because credentials are now saved.
+    chrome.tabs.create({ url: `https://${sub}.greythr.com/`, active: false });
+  }
 }
 
 async function openPortal(e) {
@@ -582,6 +635,22 @@ $("dateLabel").addEventListener("click", () => {
 chrome.storage.onChanged.addListener((changes, area) => {
   if (area !== "local") return;
   if (changes.theme || changes.accent || changes.colors) applyStoredTheme();
+  if (changes.lastBgRunAt || changes.lastBgStatus) refreshBgStatus();
+  // Auto-login from the setup screen failed → re-enable Connect with an error.
+  if (changes.autoLoginFailCount) {
+    const nv = changes.autoLoginFailCount.newValue || 0;
+    const ov = changes.autoLoginFailCount.oldValue || 0;
+    const btn = $("setupConnect");
+    if (btn && nv > ov) {
+      btn.disabled = false;
+      btn.textContent = "Connect";
+      const hint = $("setupHint");
+      if (hint) {
+        hint.textContent = "Sign-in failed — check your username and password, then try again.";
+        hint.style.color = "var(--red)";
+      }
+    }
+  }
   // Employee ID just got detected (e.g. right after first-time sign-in) → link now.
   if (changes.empId && changes.empId.newValue && !changes.empId.oldValue) {
     load();

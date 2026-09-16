@@ -4,6 +4,7 @@ import {
   DEFAULT_REQUIRED_MINUTES,
   DEFAULT_LEAVE_MINUTES,
   DEFAULT_HEADSUP_MINUTES,
+  DEFAULT_AUTO_OPEN_MINUTES,
   DEFAULT_THEME,
   DEFAULT_ACCENT,
 } from "./shared.js";
@@ -55,6 +56,7 @@ async function restore() {
     "requiredMinutes",
     "leaveMinutes",
     "headsUpMinutes",
+    "autoOpenMinutes",
     "subdomain",
     "empId",
     "theme",
@@ -74,6 +76,7 @@ async function restore() {
   const lv = store.leaveMinutes ?? DEFAULT_LEAVE_MINUTES;
   $("leaveTime").value = `${pad(Math.floor(lv / 60))}:${pad(lv % 60)}`;
   $("headsUp").value = store.headsUpMinutes ?? DEFAULT_HEADSUP_MINUTES;
+  $("autoOpen").value = store.autoOpenMinutes ?? DEFAULT_AUTO_OPEN_MINUTES;
   $("subdomain").value = store.subdomain || "";
   $("empId").value = store.empId || "";
   $("gtUser").value = store.gtUser || "";
@@ -102,6 +105,7 @@ async function save() {
     patch.leaveMinutes = lh * 60 + lm;
   }
   patch.headsUpMinutes = Math.max(0, parseInt($("headsUp").value, 10) || 0);
+  patch.autoOpenMinutes = Math.max(0, parseInt($("autoOpen").value, 10) || 0);
   const empId = $("empId").value.trim();
   if (empId) patch.empId = empId;
 
@@ -130,7 +134,71 @@ async function save() {
 // Keep appearance in sync if changed elsewhere / by system in auto mode.
 matchMedia("(prefers-color-scheme: dark)").addEventListener("change", paintAppearance);
 
+// Reflects Chrome's notification permission level (denied => nothing will ever
+// show, regardless of our code — the #1 "notifications don't work" cause).
+function checkNotifyPermission() {
+  const el = $("notifyState");
+  if (!el || !chrome.notifications || !chrome.notifications.getPermissionLevel) return;
+  chrome.notifications.getPermissionLevel((level) => {
+    if (level === "denied") {
+      el.textContent = "⚠ Chrome/Windows is blocking notifications for this extension.";
+      el.style.color = "#ef4444";
+    } else {
+      el.textContent = "";
+    }
+  });
+}
+
 $("save").addEventListener("click", save);
+$("testNotify").addEventListener("click", () => {
+  const el = $("notifyState");
+  el.style.color = "";
+  el.textContent = "Sending…";
+  chrome.notifications.create(
+    "test-" + Date.now(),
+    {
+      type: "basic",
+      iconUrl: chrome.runtime.getURL("icons/icon128.png"),
+      title: "Test notification 🔔",
+      message: "If you see this, extension notifications work on this machine.",
+      priority: 2,
+    },
+    (id) => {
+      const err = chrome.runtime.lastError;
+      if (err || !id) {
+        el.style.color = "#ef4444";
+        el.textContent = "Failed: " + (err ? err.message : "blocked by the OS/Chrome.");
+      } else {
+        el.style.color = "";
+        el.textContent = "Sent — check your notification tray.";
+        setTimeout(() => (el.textContent = ""), 4000);
+      }
+    }
+  );
+});
+$("refreshNow").addEventListener("click", async () => {
+  const el = $("refreshState");
+  el.textContent = "Pinging background worker…";
+  try {
+    await chrome.runtime.sendMessage({ type: "GT_REFRESH_NOW" });
+  } catch {
+    el.textContent = "No response — the background worker looks dead. Check chrome://extensions → Errors, then reload the extension.";
+    return;
+  }
+  setTimeout(async () => {
+    const s = await chrome.storage.local
+      .get(["lastBgRunAt", "lastBgStatus", "lastBgError"])
+      .catch(() => ({}));
+    if (!s.lastBgRunAt) {
+      el.textContent = "Worker never reported a run. Check chrome://extensions → Errors.";
+      return;
+    }
+    const secs = Math.max(0, Math.round((Date.now() - s.lastBgRunAt) / 1000));
+    el.textContent =
+      `Background ran ${secs}s ago: ${s.lastBgStatus}` +
+      (s.lastBgStatus === "error" && s.lastBgError ? ` (${s.lastBgError})` : "");
+  }, 4000);
+});
 $("clearCreds").addEventListener("click", async () => {
   await chrome.storage.local.remove([
     "gtUser",
@@ -147,3 +215,4 @@ $("clearCreds").addEventListener("click", async () => {
   setTimeout(() => ($("saved").textContent = ""), 1500);
 });
 restore();
+checkNotifyPermission();

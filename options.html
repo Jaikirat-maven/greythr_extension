@@ -139,6 +139,10 @@
     <input type="number" id="headsUp" min="0" max="120" />
     <div class="hint">Get a "almost there" notification this many minutes before you can leave. Set 0 to turn it off. Default 10.</div>
 
+    <label>Auto-open popup when time left (minutes)</label>
+    <input type="number" id="autoOpen" min="0" max="120" />
+    <div class="hint">Automatically pop open the extension window once a day when you're this close to being able to leave. Set 0 to turn it off. Default 10.</div>
+
     <label>greytHR subdomain</label>
     <input type="text" id="subdomain" placeholder="mavenvista" />
     <div class="hint">The part before <code>.greythr.com</code>. Auto-detected when you visit the portal.</div>
@@ -164,6 +168,18 @@
     <div>
       <button id="save">Save</button>
       <span id="saved"></span>
+    </div>
+
+    <div>
+      <button id="testNotify" type="button">Send test notification</button>
+      <span id="notifyState" class="hint" style="margin-left:8px;"></span>
+      <div class="hint">Checks that Windows/Chrome lets this extension show notifications. Real leave/break alerts use the same path from the background worker. If nothing appears, allow Chrome notifications in Windows Settings → System → Notifications, and turn off Focus assist / Do not disturb.</div>
+    </div>
+
+    <div>
+      <button id="refreshNow" type="button">Run background refresh now</button>
+      <span id="refreshState" class="hint" style="margin-left:8px;"></span>
+      <div class="hint">Pokes the background worker to fetch immediately, then reports what happened. If this says the worker never ran, the extension's service worker is dead — check chrome://extensions for errors and make sure the extension is enabled.</div>
     </div>
 
     <script type="module" src="options.js"></script>

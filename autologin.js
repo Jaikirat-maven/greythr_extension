@@ -24,6 +24,11 @@
   const user = (st.gtUser || "").trim();
   const pass = st.gtPass || "";
   if (st.autoLogin === false || !user || !pass) return;
+  // Safety: these credentials belong to greytHR only. The script is injected
+  // on all tabs (per manifest), but it must never type them into any other
+  // site's form.
+  const host = location.hostname.toLowerCase();
+  if (host !== "greythr.com" && !host.endsWith(".greythr.com")) return;
   // Only act when a login was actually requested (a 401 happened recently) OR
   // the user just landed on the login root with no session. The timestamp
   // guard stops us from hijacking a deliberate manual logout for very long.
