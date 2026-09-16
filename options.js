@@ -7,22 +7,51 @@ import {
   DEFAULT_AUTO_OPEN_MINUTES,
   DEFAULT_THEME,
   DEFAULT_ACCENT,
+  DEFAULT_STATE_COLORS,
 } from "./shared.js";
 
 const $ = (id) => document.getElementById(id);
 const pad = (n) => String(n).padStart(2, "0");
 
 let theme = DEFAULT_THEME;
-let accent = DEFAULT_ACCENT;
+let accent = DEFAULT_ACCENT; // a preset key ("blue") or a hex ("#3b82f6")
+let colors = { ...DEFAULT_STATE_COLORS };
 
-function paintAppearance() {
-  applyTheme(theme, accent);
+// The single hex the colour wheel should show for the current accent.
+function effectiveAccentHex() {
+  if (ACCENTS[accent]) return ACCENTS[accent][0];
+  if (typeof accent === "string" && accent[0] === "#") return accent;
+  return DEFAULT_ACCENT;
+}
+
+// Applies the live CSS (theme + accent + status colours) and highlights the
+// active theme button / preset swatch.
+function applyVars() {
+  applyTheme(theme, accent, colors);
   document.querySelectorAll("#themeSeg button").forEach((b) =>
     b.classList.toggle("active", b.dataset.themeVal === theme)
   );
-  document.querySelectorAll(".swatch").forEach((s) =>
-    s.classList.toggle("active", s.dataset.accent === accent)
-  );
+  const acc = String(accent).toLowerCase();
+  document.querySelectorAll(".swatch").forEach((s) => {
+    const key = s.dataset.accent;
+    const active =
+      accent === key || (ACCENTS[key] && ACCENTS[key][0].toLowerCase() === acc);
+    s.classList.toggle("active", active);
+  });
+}
+
+// Pushes the current state into the input controls (wheel + status pickers).
+// Kept separate from applyVars so we don't stomp an input mid-drag.
+function syncControls() {
+  if ($("accentCustom")) $("accentCustom").value = effectiveAccentHex();
+  if ($("colDone")) $("colDone").value = colors.done;
+  if ($("colWaiting")) $("colWaiting").value = colors.waiting;
+  if ($("colOver")) $("colOver").value = colors.over;
+}
+
+function paintAppearance() {
+  applyVars();
+  syncControls();
 }
 
 function buildSwatches() {
@@ -40,6 +69,44 @@ function buildSwatches() {
       paintAppearance();
     });
     box.appendChild(b);
+  }
+}
+
+// Wire the colour wheel + status-colour pickers (static elements in the HTML).
+function wireColorControls() {
+  const wheel = $("accentCustom");
+  if (wheel) {
+    wheel.addEventListener("input", () => {
+      accent = wheel.value;
+      applyVars(); // live preview; don't re-sync the wheel we're dragging
+    });
+    wheel.addEventListener("change", () => {
+      accent = wheel.value;
+      chrome.storage.local.set({ accent });
+      applyVars();
+    });
+  }
+  const map = { colDone: "done", colWaiting: "waiting", colOver: "over" };
+  for (const [id, key] of Object.entries(map)) {
+    const el = $(id);
+    if (!el) continue;
+    el.addEventListener("input", () => {
+      colors = { ...colors, [key]: el.value };
+      applyVars();
+    });
+    el.addEventListener("change", () => {
+      colors = { ...colors, [key]: el.value };
+      chrome.storage.local.set({ colors });
+    });
+  }
+  const reset = $("resetColors");
+  if (reset) {
+    reset.addEventListener("click", (e) => {
+      e.preventDefault();
+      colors = { ...DEFAULT_STATE_COLORS };
+      chrome.storage.local.set({ colors });
+      paintAppearance();
+    });
   }
 }
 
@@ -61,13 +128,16 @@ async function restore() {
     "empId",
     "theme",
     "accent",
+    "colors",
     "gtUser",
     "gtPass",
     "autoLogin",
   ]);
   theme = store.theme || DEFAULT_THEME;
   accent = store.accent || DEFAULT_ACCENT;
+  colors = { ...DEFAULT_STATE_COLORS, ...(store.colors || {}) };
   buildSwatches();
+  wireColorControls();
   paintAppearance();
 
   const total = store.requiredMinutes || DEFAULT_REQUIRED_MINUTES;
@@ -98,6 +168,7 @@ async function save() {
     subdomain: $("subdomain").value.trim() || "mavenvista",
     theme,
     accent,
+    colors,
   };
   const lv = $("leaveTime").value; // "HH:MM"
   if (lv && /^\d{2}:\d{2}$/.test(lv)) {

@@ -6,7 +6,8 @@
     <style>
       :root {
         --ink: #0f172a; --muted: #64748b; --line: #e2e8f0;
-        --blue: #3b82f6; --indigo: #6366f1; --green: #22c55e;
+        --blue: #3b82f6; --indigo: #6366f1;
+        --green: #22c55e; --amber: #f59e0b; --red: #ef4444;
         --bg: #ffffff; --card: #f7f9fc;
       }
       :root[data-theme="dark"] {
@@ -90,6 +91,69 @@
       }
       .swatch:hover { transform: scale(1.1); box-shadow: none; }
       .swatch.active { border-color: var(--ink); }
+
+      /* Colour inputs (wheel + status pickers) — keep them small & round, not
+         full-width like the text inputs. */
+      input[type="color"] {
+        -webkit-appearance: none; appearance: none;
+        width: 34px; height: 34px; padding: 0; margin: 0;
+        border: none; border-radius: 50%; background: none; cursor: pointer;
+        box-shadow: none; transition: transform 0.12s;
+      }
+      input[type="color"]:hover { transform: scale(1.08); }
+      input[type="color"]:focus { outline: none; box-shadow: none; }
+      input[type="color"]::-webkit-color-swatch-wrapper { padding: 0; }
+      input[type="color"]::-webkit-color-swatch { border: 2px solid var(--line); border-radius: 50%; }
+
+      .accent-row { display: flex; align-items: center; gap: 14px; flex-wrap: wrap; }
+      .accent-div { width: 1px; height: 26px; background: var(--line); }
+      .wheel { display: inline-flex; align-items: center; position: relative; }
+      .wheel::after {
+        content: "＋"; position: absolute; inset: 0; display: flex;
+        align-items: center; justify-content: center; color: #fff; font-size: 15px;
+        pointer-events: none; text-shadow: 0 1px 2px rgba(0,0,0,0.35);
+      }
+
+      details.adv { margin-top: 18px; }
+      details.adv summary {
+        cursor: pointer; font-size: 13px; font-weight: 600; color: var(--muted);
+        list-style: none;
+      }
+      details.adv summary::-webkit-details-marker { display: none; }
+      details.adv summary::before { content: "▸  "; }
+      details.adv[open] summary::before { content: "▾  "; }
+      .statecolors { display: flex; gap: 18px; margin-top: 14px; flex-wrap: wrap; }
+      .sc {
+        display: inline-flex; align-items: center; gap: 8px; margin: 0;
+        font-size: 12px; font-weight: 600; color: var(--muted);
+      }
+      .reset-link {
+        display: inline-block; margin-top: 14px; font-size: 12px;
+        color: var(--blue); cursor: pointer; text-decoration: none;
+      }
+      .reset-link:hover { text-decoration: underline; }
+
+      /* Live preview — reflects the CSS vars applyTheme sets, so it updates
+         instantly as you pick colours. */
+      .preview {
+        display: flex; align-items: center; gap: 16px;
+        margin-top: 18px; padding: 12px 14px;
+        background: var(--card); border-radius: 12px;
+      }
+      .pv-ring {
+        width: 40px; height: 40px; border-radius: 50%; flex: none; position: relative;
+        background: linear-gradient(135deg, var(--blue), var(--indigo));
+      }
+      .pv-ring::after {
+        content: ""; position: absolute; inset: 8px; border-radius: 50%; background: var(--card);
+      }
+      .pv-legend { display: flex; flex-wrap: wrap; gap: 8px 14px; font-size: 11px; color: var(--muted); }
+      .pv-legend span { display: inline-flex; align-items: center; gap: 5px; }
+      .pv-dot { width: 12px; height: 12px; border-radius: 50%; display: inline-block; }
+      .pv-accent { background: linear-gradient(135deg, var(--blue), var(--indigo)); }
+      .pv-done { background: var(--green); }
+      .pv-wait { background: var(--amber); }
+      .pv-over { background: var(--red); }
     </style>
   </head>
   <body>
@@ -123,6 +187,16 @@
       </div>
       <a id="resetColors" class="reset-link">Reset status colors</a>
     </details>
+
+    <div class="preview" title="Live preview">
+      <span class="pv-ring"></span>
+      <div class="pv-legend">
+        <span><i class="pv-dot pv-accent"></i>Accent</span>
+        <span><i class="pv-dot pv-done"></i>Done</span>
+        <span><i class="pv-dot pv-wait"></i>Waiting</span>
+        <span><i class="pv-dot pv-over"></i>Over</span>
+      </div>
+    </div>
 
     <label>Required working hours per day</label>
     <div class="req">
