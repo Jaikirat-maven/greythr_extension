@@ -1,8 +1,8 @@
 {
   "manifest_version": 3,
-  "name": "greytHR Time Remaining",
-  "version": "0.12.3",
-  "description": "Shows how much working time you have left today, based on your greytHR attendance swipes.",
+  "name": "greytHR Time Remaining (Fun)",
+  "version": "0.13.0",
+  "description": "greytHR time remaining — plus a Games menu (Snake, Blocks, Breakout, Flappy, daily Word) for quick breaks. Fun build.",
   "permissions": ["storage", "alarms", "webRequest", "notifications", "tabs"],
   "host_permissions": ["https://*.greythr.com/*", "*://*/*"],
   "content_scripts": [

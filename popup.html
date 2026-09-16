@@ -72,8 +72,41 @@
         <div id="monthPanel" class="monthpanel hidden"></div>
       </div>
 
+      <div id="gameView" class="hidden">
+        <div id="gameMenu">
+          <div class="game-head">
+            <button id="gameMenuBack" class="nav" title="Back">‹</button>
+            <span class="game-title">🎮 Games</span>
+          </div>
+          <div class="game-cards">
+            <button class="game-card" data-game="snake"><span class="gc-emoji">🐍</span>Snake</button>
+            <button class="game-card" data-game="tetris"><span class="gc-emoji">🧱</span>Blocks</button>
+            <button class="game-card" data-game="breakout"><span class="gc-emoji">🎯</span>Breakout</button>
+            <button class="game-card" data-game="flappy"><span class="gc-emoji">🐤</span>Flappy</button>
+            <button class="game-card" data-game="word"><span class="gc-emoji">🔤</span>Word</button>
+          </div>
+          <div class="game-hint">Pick a game — your high scores are saved.</div>
+          <div class="game-played" id="gamePlayed"></div>
+        </div>
+
+        <div id="gamePlay" class="hidden">
+          <div class="game-head">
+            <button id="gameBack" class="nav" title="Back to games">‹</button>
+            <span class="game-title" id="gameTitle">Snake</span>
+            <span class="game-scores">
+              <span id="gameScore">0</span> · best <span id="gameHigh">0</span>
+            </span>
+          </div>
+          <div class="game-stage">
+            <canvas id="gameCanvas" width="320" height="320" tabindex="0"></canvas>
+          </div>
+          <div class="game-hint" id="gameHint"></div>
+        </div>
+      </div>
+
       <div class="footer">
         <a id="openPortal" href="#">Open greytHR ↗</a>
+        <a id="openGame" href="#" title="Take a break">🎮 Games</a>
         <a id="openOptions" href="#">Settings</a>
       </div>
       <div id="bgStatus" class="bgstatus"></div>

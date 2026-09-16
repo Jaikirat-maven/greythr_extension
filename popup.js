@@ -24,6 +24,11 @@ import {
   DEFAULT_THEME,
   DEFAULT_ACCENT,
 } from "./shared.js";
+import { startSnake, stopSnake } from "./snake.js";
+import { startTetris, stopTetris } from "./tetris.js";
+import { startBreakout, stopBreakout } from "./breakout.js";
+import { startFlappy, stopFlappy } from "./flappy.js";
+import { startWord, stopWord } from "./wordguess.js";
 
 async function applyStoredTheme() {
   const { theme, accent, colors } = await chrome.storage.local.get([
@@ -39,6 +44,7 @@ matchMedia("(prefers-color-scheme: dark)").addEventListener("change", applyStore
 const $ = (id) => document.getElementById(id);
 const RING_C = 2 * Math.PI * 52; // circumference of the progress ring
 
+let gameOpen = false; // Snake is showing instead of the attendance view
 let selected = startOfDay(new Date()); // currently viewed day
 let lastData = null; // raw swipes response for `selected`
 let cfg = {
@@ -651,6 +657,8 @@ chrome.storage.onChanged.addListener((changes, area) => {
       }
     }
   }
+  // Don't let background data updates disturb the game while it's on screen.
+  if (gameOpen) return;
   // Employee ID just got detected (e.g. right after first-time sign-in) → link now.
   if (changes.empId && changes.empId.newValue && !changes.empId.oldValue) {
     load();
@@ -693,5 +701,136 @@ $("openOptions").addEventListener("click", (e) => {
   e.preventDefault();
   chrome.runtime.openOptionsPage();
 });
+
+// --- Snake (a little break) -------------------------------------------------
+function toggleChrome(hidden) {
+  document.querySelector(".topbar").classList.toggle("hidden", hidden);
+  document.querySelector(".footer").classList.toggle("hidden", hidden);
+  const bs = $("bgStatus");
+  if (bs) bs.classList.toggle("hidden", hidden);
+}
+
+let currentGame = null;
+
+// --- Daily "time spent playing" tracker ------------------------------------
+let gameSessionStart = 0;
+let gameFlushTimer = null;
+
+function startGameTimer() {
+  gameSessionStart = Date.now();
+  clearInterval(gameFlushTimer);
+  // Flush every 10s so closing the popup mid-game loses at most ~10s.
+  gameFlushTimer = setInterval(() => flushGameTimer(true), 10000);
+}
+async function flushGameTimer(keepGoing) {
+  if (!gameSessionStart) return;
+  const delta = Math.round((Date.now() - gameSessionStart) / 1000);
+  gameSessionStart = keepGoing ? Date.now() : 0;
+  if (delta <= 0) return;
+  const day = todayStr();
+  const { gameTime } = await chrome.storage.local.get("gameTime");
+  const gt = gameTime && gameTime.date === day ? gameTime : { date: day, sec: 0 };
+  gt.sec += delta;
+  await chrome.storage.local.set({ gameTime: gt });
+}
+function stopGameTimer() {
+  clearInterval(gameFlushTimer);
+  gameFlushTimer = null;
+  return flushGameTimer(false);
+}
+async function updatePlayedToday() {
+  const el = $("gamePlayed");
+  if (!el) return;
+  const { gameTime } = await chrome.storage.local.get("gameTime");
+  const sec = gameTime && gameTime.date === todayStr() ? gameTime.sec : 0;
+  el.textContent = sec > 0 ? `⏱ You've played ${sec < 60 ? sec + "s" : fmtDuration(sec)} today` : "";
+}
+
+// name → { title, hint, w, h, start, stop }
+const GAMES = {
+  snake: {
+    title: "🐍 Snake", hint: "Arrow keys / WASD to move · Space to start",
+    w: 320, h: 320, start: startSnake, stop: stopSnake,
+  },
+  tetris: {
+    title: "🧱 Blocks", hint: "← → move · ↑ rotate · ↓ soft drop · Space hard drop",
+    w: 200, h: 320, start: startTetris, stop: stopTetris,
+  },
+  breakout: {
+    title: "🎯 Breakout", hint: "Move: mouse / ← → · Space to launch",
+    w: 320, h: 320, start: startBreakout, stop: stopBreakout,
+  },
+  flappy: {
+    title: "🐤 Flappy", hint: "Space / tap to flap",
+    w: 300, h: 320, start: startFlappy, stop: stopFlappy,
+  },
+  word: {
+    title: "🔤 Word", hint: "Type 5 letters · Enter to guess",
+    w: 300, h: 320, start: startWord, stop: stopWord,
+  },
+};
+
+function stopCurrentGame() {
+  if (currentGame && GAMES[currentGame]) GAMES[currentGame].stop();
+  currentGame = null;
+}
+
+async function showGameMenu() {
+  stopCurrentGame();
+  await stopGameTimer(); // bank the session that just ended
+  $("gamePlay").classList.add("hidden");
+  $("gameMenu").classList.remove("hidden");
+  updatePlayedToday();
+}
+
+function playGame(kind) {
+  const g = GAMES[kind];
+  if (!g) return;
+  currentGame = kind;
+  $("gameMenu").classList.add("hidden");
+  $("gamePlay").classList.remove("hidden");
+  const canvas = $("gameCanvas");
+  canvas.width = g.w;
+  canvas.height = g.h;
+  $("gameTitle").textContent = g.title;
+  $("gameHint").textContent = g.hint;
+  g.start({ canvas, scoreEl: $("gameScore"), highEl: $("gameHigh") });
+  startGameTimer();
+  canvas.focus();
+}
+
+function openGame(e) {
+  if (e) e.preventDefault();
+  gameOpen = true;
+  stopTick(); // pause the attendance countdown while playing
+  hideNotice();
+  closeMonth();
+  $("main").classList.add("hidden");
+  $("state").classList.add("hidden");
+  toggleChrome(true);
+  $("gameView").classList.remove("hidden");
+  showGameMenu();
+}
+
+function closeGame() {
+  gameOpen = false;
+  stopCurrentGame();
+  stopGameTimer(); // bank the final session
+  $("gameView").classList.add("hidden");
+  toggleChrome(false);
+  load(); // back to the attendance view (re-fetch / re-render)
+}
+
+// Popup closing while a game is on screen → bank the current session.
+window.addEventListener("pagehide", () => {
+  if (gameSessionStart) flushGameTimer(false);
+});
+
+$("openGame").addEventListener("click", openGame);
+$("gameMenuBack").addEventListener("click", closeGame);
+$("gameBack").addEventListener("click", showGameMenu);
+document.querySelectorAll(".game-card").forEach((card) =>
+  card.addEventListener("click", () => playGame(card.dataset.game))
+);
 
 load();
