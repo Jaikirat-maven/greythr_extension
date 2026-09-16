@@ -189,10 +189,16 @@ async function updateBadge() {
       lastBgStatus: e.code === 401 ? "expired" : "error",
       lastBgError: String((e && e.message) || e),
     });
-    // Session expired → try a silent re-login if the user saved credentials.
-    if (e.code === 401 && subdomain) {
+    // greytHR often answers an expired/invalid session with 403 or a 5xx
+    // instead of a clean 401, so treat those as "session might be dead" and
+    // try a silent re-login too. Guarded by cooldown + max-fails, so a real
+    // outage won't loop; and if the session was actually fine, the login page
+    // just redirects to the portal and the tab closes itself.
+    const authLike =
+      e.code === 401 || e.code === 403 || (e.code >= 500 && e.code <= 599);
+    if (authLike && subdomain) {
       try {
-        await requestAutoLogin(subdomain, "badge-401");
+        await requestAutoLogin(subdomain, "badge-" + e.code);
       } catch {
         // Never let auto-login break the badge loop.
       }

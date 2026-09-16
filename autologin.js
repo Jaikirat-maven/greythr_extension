@@ -102,51 +102,73 @@
     } catch { /* non-fatal */ }
   };
 
-  setVal(userEl, user);
-  setVal(passEl, pass);
+  // Fill (re-finding fields in case the SPA re-rendered) and submit once.
+  async function submitOnce() {
+    const u = findUserField();
+    const p = findPassField();
+    if (!p) return false;
+    if (u && (!u.value || u.value.trim() !== user)) setVal(u, user);
+    setVal(p, pass);
+    await sleep(600);
+    const btn = findLoginButton();
+    if (btn) btn.click();
+    else if (p.form) p.form.requestSubmit?.() ?? p.form.submit();
+    else p.dispatchEvent(new KeyboardEvent("keydown", { key: "Enter", bubbles: true }));
+    return true;
+  }
+
   try {
     await chrome.runtime.sendMessage({ type: "GT_AUTOLOGIN_SUBMITTED" });
   } catch { /* SW may be asleep — non-fatal */ }
 
-  await sleep(600);
-  const btn = findLoginButton();
-  if (btn) {
-    btn.click();
-  } else if (passEl.form) {
-    passEl.form.requestSubmit?.() ?? passEl.form.submit();
-  } else {
-    passEl.dispatchEvent(new KeyboardEvent("keydown", { key: "Enter", bubbles: true }));
-  }
+  await submitOnce();
 
-  // Watch the outcome: success = navigated into the portal; failure = an
-  // error toast or still sitting on the login form.
+  // Watch the outcome. Retry the submit once if the first attempt errors or
+  // stalls on the form — covers transient 500s and a background tab that
+  // wasn't ready yet (a manual foreground tab "just works" for this reason).
   const t0 = Date.now();
+  let attempts = 1;
+  let retrying = false;
   let done = false;
   const report = (type) => {
     if (done) return;
     done = true;
     chrome.runtime.sendMessage({ type }).catch(() => {});
   };
-  const timer = setInterval(() => {
+  const findErr = () =>
+    [...document.querySelectorAll("[class*=error], [class*=invalid], .toast, mat-error, .alert-danger")].find(
+      (el) =>
+        el.offsetParent !== null &&
+        /invalid|incorrect|fail|wrong|denied|locked|error|500|try again/i.test(el.textContent || "")
+    );
+  const timer = setInterval(async () => {
+    if (retrying) return;
     const url = location.href;
     if (/\/v3\/portal|\/ess\/|dashboard|home/i.test(url) && !findPassField()) {
       clearInterval(timer);
       report("GT_AUTOLOGIN_SUCCESS");
       return;
     }
-    const errEl = [...document.querySelectorAll("[class*=error], [class*=invalid], .toast, mat-error, .alert-danger")]
-      .find((el) => el.offsetParent !== null && /invalid|incorrect|fail|wrong|denied|locked/i.test(el.textContent || ""));
-    if (errEl) {
+    const err = findErr();
+    const elapsed = Date.now() - t0;
+    // One retry if it errored or stalled while still on the login form.
+    if ((err || elapsed > 8000) && findPassField() && attempts < 2) {
+      attempts++;
+      retrying = true;
+      await sleep(1200); // let a transient server error settle
+      await submitOnce();
+      retrying = false;
+      return;
+    }
+    if (err) {
       clearInterval(timer);
       report("GT_AUTOLOGIN_FAILED");
       return;
     }
-    if (Date.now() - t0 > 20000) {
+    if (elapsed > 28000) {
       clearInterval(timer);
-      // Still on a login form with the password field visible → likely failed
-      // (or a captcha/MFA appeared). Only report failure if the form is there.
-      if (findPassField()) report("GT_AUTOLOGIN_FAILED");
-      else report("GT_AUTOLOGIN_SUCCESS");
+      // Still on a login form → likely failed (or a captcha/MFA appeared).
+      report(findPassField() ? "GT_AUTOLOGIN_FAILED" : "GT_AUTOLOGIN_SUCCESS");
     }
   }, 1000);
 })();

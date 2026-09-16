@@ -1,7 +1,7 @@
 {
   "manifest_version": 3,
   "name": "greytHR Time Remaining",
-  "version": "0.12.2",
+  "version": "0.12.3",
   "description": "Shows how much working time you have left today, based on your greytHR attendance swipes.",
   "permissions": ["storage", "alarms", "webRequest", "notifications", "tabs"],
   "host_permissions": ["https://*.greythr.com/*", "*://*/*"],
