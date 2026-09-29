@@ -335,16 +335,15 @@ export function applyBadge(r) {
 // Returns true on success so callers can set their once-per-day guard AFTER
 // the notification fired (so a killed worker retries instead of silently
 // suppressing it for the rest of the day).
-export function notify(id, { title, message, priority = 1 }) {
+export async function notify(id, { title, message, priority = 1 }) {
+  if (typeof chrome === "undefined" || !chrome.notifications) return false;
+  const { notificationsEnabled } = await chrome.storage.local.get("notificationsEnabled");
+  if (notificationsEnabled === false) return false; // master off switch (Settings)
+  const iconUrl =
+    chrome.runtime && chrome.runtime.getURL
+      ? chrome.runtime.getURL("icons/icon128.png")
+      : "icons/icon128.png";
   return new Promise((resolve) => {
-    if (typeof chrome === "undefined" || !chrome.notifications) {
-      resolve(false);
-      return;
-    }
-    const iconUrl =
-      chrome.runtime && chrome.runtime.getURL
-        ? chrome.runtime.getURL("icons/icon128.png")
-        : "icons/icon128.png";
     try {
       chrome.notifications.create(id, { type: "basic", iconUrl, title, message, priority }, () => {
         // lastError is read to avoid an "unchecked runtime.lastError" warning.
@@ -489,36 +488,6 @@ export async function clearAutoLoginState() {
     "autoLoginTabId",
     "autoLoginReason",
   ]);
-}
-
-// --- Auto-open popup window -------------------------------------------------
-// Opens the popup UI in a focused window once per day when little time is
-// left. Called only from the background worker (never from the popup itself,
-// which is already open). 0 / unset = disabled.
-export const DEFAULT_AUTO_OPEN_MINUTES = 10;
-
-export async function maybeAutoOpen(r, minutes) {
-  if (typeof chrome === "undefined" || !chrome.windows || !chrome.runtime) return;
-  if (!r || !(minutes > 0)) return;
-  const done = r.canLeave != null ? r.canLeave : r.completed;
-  if (done) return; // already free to leave — the leave notification covers it
-  const secs = r.tillLeaveSec != null ? r.tillLeaveSec : r.remainingSec;
-  if (secs == null || secs <= 0 || secs > minutes * 60) return;
-  const today = todayStr();
-  const { autoOpenedDate } = await chrome.storage.local.get("autoOpenedDate");
-  if (autoOpenedDate === today) return; // once per day
-  await chrome.storage.local.set({ autoOpenedDate: today });
-  try {
-    await chrome.windows.create({
-      url: chrome.runtime.getURL("popup.html"),
-      type: "popup",
-      focused: true,
-      width: 380,
-      height: 620,
-    });
-  } catch {
-    // Window blocked/failed — stays "opened" for today to avoid spawn loops.
-  }
 }
 
 export function fmtDuration(sec) {
